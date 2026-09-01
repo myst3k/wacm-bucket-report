@@ -1,9 +1,15 @@
 # WACM Bucket Report
 
-Produces a CSV listing every active bucket under a Wasabi WACM control account,
-with per-bucket storage, a 90-day storage growth figure per sub-account, and
-per-bucket features (versioning, object lock, lifecycle, replication, CORS,
-encryption, tagging).
+Reports every active bucket under a Wasabi WACM control account at three levels,
+writing three CSVs per run:
+
+- **`..._buckets.csv`** — one row per bucket: storage, 90-day growth, and
+  features (versioning, object lock + mode, lifecycle, replication, CORS,
+  encryption, tagging).
+- **`..._subaccounts.csv`** — one row per sub-account: storage, growth, and a
+  count of each feature across its buckets.
+- **`..._channels.csv`** — one row per channel account: the same, rolled up
+  across its sub-accounts.
 
 Account hierarchy and storage come from the WACM Connect API. Bucket features
 are not exposed by that API, so for each sub-account the tool reads its
@@ -35,31 +41,45 @@ uv run wacm-bucket-report --limit 20
 # Storage and growth only, skipping the per-bucket feature reads (much faster)
 uv run wacm-bucket-report --no-features
 
-# A specific control account, custom output path
-uv run wacm-bucket-report --control-account 12345 --out my_report.csv
+# A specific control account and output prefix
+uv run wacm-bucket-report --control-account 12345 --out acme
 ```
 
 Options: `--control-account`, `--out`, `--limit`, `--no-features`, `--workers`.
 
+Output files are named from the control account and run time, for example
+`wacm_12345_acme-storage_20260901-1524_buckets.csv`. Pass `--out PREFIX` to name
+them yourself (`PREFIX_buckets.csv`, …).
+
 ## Output columns
 
-| Column | Source | Notes |
-|---|---|---|
-| control / channel / sub account id, name, email, status | WACM | account hierarchy |
-| `wasabi_account_number` | WACM | the sub-account's Wasabi account |
-| `sub_storage_now_tib`, `sub_storage_90d_ago_tib` | WACM | sub-account totals |
-| `sub_growth_90d_tib`, `sub_growth_90d_pct` | WACM | 90-day growth; % is blank when the base was zero |
-| `bucket`, `bucket_number`, `region` | WACM | |
-| `active_storage_tib`, `deleted_storage_tib` | WACM | |
-| `active_objects`, `deleted_objects` | WACM | |
-| `versioning`, `object_lock` (+ `mode`, `days`) | S3 | |
-| `lifecycle_rules`, `replication`, `cors_rules` | S3 | |
-| `encryption`, `tagging` | S3 | |
-| `features_error` | — | e.g. `no keys` when the sub-account has no root key to read |
+**`_buckets.csv`** — one row per bucket:
 
-Storage is in TiB (binary, 2⁴⁰ bytes), rounded to three decimals. Sub-accounts
-without a root access key still report storage and growth; their feature columns
-are left blank with `features_error = no keys`.
+| Column | Source |
+|---|---|
+| control / channel / sub account id, name, email, status | WACM |
+| `wasabi_account_number` | WACM |
+| `bucket`, `bucket_number`, `region` | WACM |
+| `active_storage_tib`, `deleted_storage_tib`, `active_objects`, `deleted_objects` | WACM |
+| `storage_90d_ago_tib`, `growth_90d_tib`, `growth_90d_pct` | WACM (daily series) |
+| `versioning`, `object_lock`, `object_lock_mode`, `object_lock_days` | S3 |
+| `lifecycle_rules`, `replication`, `cors_rules`, `encryption`, `tagging` | S3 |
+| `features_error` | e.g. `no keys` when the sub-account has no root key to read |
+
+**`_subaccounts.csv`** and **`_channels.csv`** — one row per sub-account /
+channel account, with `storage_now_tib`, `storage_90d_ago_tib`, `growth_90d_tib`,
+`growth_90d_pct`, and a count of each feature:
+
+`bucket_count`, `versioned_buckets`, `object_lock_buckets`,
+`object_lock_compliance`, `object_lock_governance`, `object_lock_no_default`,
+`replication_buckets`, `lifecycle_buckets`, `cors_buckets`, `encryption_buckets`,
+`tagging_buckets`, `features_unavailable`. The channel file also has
+`sub_account_count`.
+
+Storage is in TiB (binary, 2⁴⁰ bytes), rounded to three decimals. The growth
+percentage is blank when the 90-day-ago baseline was zero. Sub-accounts without a
+root access key still report storage and growth; their feature columns are blank
+and they are tallied under `features_unavailable`.
 
 ## Notes
 
